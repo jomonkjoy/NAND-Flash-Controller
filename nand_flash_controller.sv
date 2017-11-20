@@ -129,4 +129,74 @@ module nand_flash_controller #(
   assign buf_rd_address = {'h0,count[COUNT_WIDTH-1:2]};
   assign buf_rd_write_data = {IO_I,IO_i[DATA_WIDTH-1:8]};
   
+  assign cpu_if_access_complete = state == DONE;
+  
+  always_ff @(posedge clk) begin
+    if (reset) begin
+      state <= IDLE;
+      count <= 0;
+      cpu_if_access_ready <= 1'b0;
+    end else begin
+      case (state)
+        IDLE : begin
+          if (cpu_if_access_ready && cpu_if_access_request) begin
+            state <= COMMAND1;
+            cpu_if_access_ready <= 1'b0;
+          end else begin
+            cpu_if_access_ready <= 1'b1;
+          end
+        end
+        COMMAND1 : begin
+          if (~WE_N && cpu_if_address_bytes != 0) begin
+            state <= ADDRESS;
+          end else if (~WE_N) begin
+            state <= DONE;
+          end
+        end
+        COMMAND2 : begin
+          if (~WE_N && cpu_if_data_bytes != 0) begin
+            state <= cpu_if_data_rw ? DATA_RD : DATA_WR;
+          end else if (~WE_N) begin
+            state <= DONE;
+          end
+        end
+        ADDRESS : begin
+          if (~WE_N && count[ADDR_WIDTH/8-1:0] >= cpu_if_address_bytes && cpu_if_command_valid) begin
+            state <= COMMAND2;
+            count <= 0;
+          end else if (~WE_N && count[ADDR_WIDTH/8-1:0] >= cpu_if_address_bytes && cpu_if_data_bytes != 0) begin
+            state <= cpu_if_data_rw ? DATA_RD : DATA_WR;
+            count <= 0;
+          end else if (~WE_N && count[ADDR_WIDTH/8-1:0] >= cpu_if_address_bytes) begin
+            state <= DONE;
+            count <= 0;
+          end else if (~WE_N) begin
+            count <= count + 1;
+          end
+        end
+        DATA_WR : begin
+          if (~WE_N && count >= cpu_if_data_bytes[COUNT_WIDTH-1:0]) begin
+            state <= DONE;
+            count <= 0;
+          end else if (~WE_N) begin
+            count <= count + 1;
+          end
+        end
+        DATA_RD : begin
+          if (~RE_N && count >= cpu_if_data_bytes[COUNT_WIDTH-1:0]) begin
+            state <= DONE;
+            count <= 0;
+          end else if (~RE_N) begin
+            count <= count + 1;
+          end
+        end
+        DONE : begin
+          state <= IDLE;
+          cpu_if_access_ready <= 1'b1;
+        end
+        default : state <= IDLE;
+      endcase
+    end
+  end
+  
 endmodule
