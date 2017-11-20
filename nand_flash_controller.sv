@@ -93,4 +93,40 @@ module nand_flash_controller #(
     end
   end
   
+  always_ff @(posedge clk) begin
+    case (state)
+      COMMAND1 : IO_O <= cpu_if_command[7:0];
+      COMMAND2 : IO_O <= cpu_if_command[15:8];
+      ADDRESS  : IO_O <= cpu_if_address[8*count[2:0] +: 8];
+      DATA_WR  : IO_O <= buf_wr_read_data[8*count[2:0] +: 8];
+    endcase
+  end
+  
+  logic [DATA_WIDTH-1:0] IO_i;
+  always_ff @(posedge clk) begin
+    if (state == DATA_RD && RB_N && RE_N) begin
+      IO_i <= {IO_I,IO_i[DATA_WIDTH-1:8]};
+    end
+  end
+  
+  always_ff @(posedge clk) begin
+    if (state == ADDRESS || state == COMMAND1 || state == COMMAND2 || state == DATA_WR || state == DONE) begin
+      IO_OE <= 1'b1;
+    end else begin
+      IO_OE <= 1'b0;
+    end
+  end
+  
+  always_ff @(posedge clk) begin
+    if (state == IDLE) begin
+      buf_wr_address <= {ADDR_WIDTH{1'b0}};
+    end else if (RB_N && WE_N && state == DATA_WR) begin
+      buf_wr_address <= buf_wr_address + 1;
+    end
+  end
+  
+  assign buf_rd_write = state == DATA_RD && RE_N && RB_N && count[1:0] == 2'b11;
+  assign buf_rd_address = {'h0,count[COUNT_WIDTH-1:2]};
+  assign buf_rd_write_data = {IO_I,IO_i[DATA_WIDTH-1:8]};
+  
 endmodule
